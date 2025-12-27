@@ -228,7 +228,7 @@ impl AcpMcpService {
     async fn handle_get_file_context(&self, path: String) -> Result<CallToolResult, McpError> {
         let cache = self.state.cache_async().await;
 
-        let file = cache.files.get(&path)
+        let file = cache.get_file(&path)
             .ok_or_else(|| McpError::invalid_params(format!("File not found: {}", path), None))?;
 
         let json = serde_json::to_string_pretty(file)
