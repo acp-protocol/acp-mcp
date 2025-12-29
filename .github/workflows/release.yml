@@ -132,3 +132,253 @@ jobs:
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
         run: cargo publish --no-verify
+
+  publish-npm:
+    name: Publish to npm
+    needs: release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Extract version
+        id: version
+        run: echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+      - name: Prepare npm packages
+        run: |
+          VERSION=${{ steps.version.outputs.version }}
+
+          declare -A PLATFORMS=(
+            ["aarch64-apple-darwin"]="darwin-arm64"
+            ["x86_64-apple-darwin"]="darwin-x64"
+            ["x86_64-unknown-linux-gnu"]="linux-x64-gnu"
+            ["x86_64-unknown-linux-musl"]="linux-x64-musl"
+            ["aarch64-unknown-linux-gnu"]="linux-arm64-gnu"
+            ["aarch64-unknown-linux-musl"]="linux-arm64-musl"
+            ["x86_64-pc-windows-msvc"]="win32-x64"
+          )
+
+          for target in "${!PLATFORMS[@]}"; do
+            npm_platform="${PLATFORMS[$target]}"
+            pkg_dir="npm-packages/@acp-protocol/mcp-${npm_platform}"
+            mkdir -p "$pkg_dir/bin"
+
+            if [[ "$target" == *"windows"* ]]; then
+              unzip -o "artifacts/acp-mcp-${target}/acp-mcp-${target}.zip" -d "$pkg_dir/bin/"
+              binary_name="acp-mcp.exe"
+            else
+              tar -xzf "artifacts/acp-mcp-${target}/acp-mcp-${target}.tar.gz" -C "$pkg_dir/bin/"
+              binary_name="acp-mcp"
+              chmod +x "$pkg_dir/bin/$binary_name"
+            fi
+
+            cat > "$pkg_dir/package.json" << EOF
+          {
+            "name": "@acp-protocol/mcp-${npm_platform}",
+            "version": "${VERSION}",
+            "description": "ACP MCP Server binary for ${npm_platform}",
+            "os": ["$(echo $npm_platform | cut -d'-' -f1 | sed 's/win32/win32/')"],
+            "cpu": ["$(echo $npm_platform | cut -d'-' -f2 | sed 's/x64/x64/;s/arm64/arm64/')"],
+            "main": "bin/${binary_name}",
+            "repository": {
+              "type": "git",
+              "url": "git+https://github.com/acp-protocol/acp-mcp.git"
+            },
+            "license": "MIT"
+          }
+          EOF
+          done
+
+          main_dir="npm-packages/@acp-protocol/mcp"
+          mkdir -p "$main_dir/bin"
+
+          cat > "$main_dir/package.json" << 'PKGJSON'
+          {
+            "name": "@acp-protocol/mcp",
+            "version": "VERSION_PLACEHOLDER",
+            "description": "ACP MCP Server - Model Context Protocol server for AI tools",
+            "bin": {
+              "acp-mcp": "bin/acp-mcp.js"
+            },
+            "repository": {
+              "type": "git",
+              "url": "git+https://github.com/acp-protocol/acp-mcp.git"
+            },
+            "keywords": ["ai", "mcp", "claude", "llm", "context", "model-context-protocol"],
+            "license": "MIT",
+            "optionalDependencies": {
+              "@acp-protocol/mcp-darwin-arm64": "VERSION_PLACEHOLDER",
+              "@acp-protocol/mcp-darwin-x64": "VERSION_PLACEHOLDER",
+              "@acp-protocol/mcp-linux-x64-gnu": "VERSION_PLACEHOLDER",
+              "@acp-protocol/mcp-linux-x64-musl": "VERSION_PLACEHOLDER",
+              "@acp-protocol/mcp-linux-arm64-gnu": "VERSION_PLACEHOLDER",
+              "@acp-protocol/mcp-linux-arm64-musl": "VERSION_PLACEHOLDER",
+              "@acp-protocol/mcp-win32-x64": "VERSION_PLACEHOLDER"
+            }
+          }
+          PKGJSON
+
+          sed -i "s/VERSION_PLACEHOLDER/${VERSION}/g" "$main_dir/package.json"
+
+          cat > "$main_dir/bin/acp-mcp.js" << 'WRAPPER'
+          #!/usr/bin/env node
+          const { execFileSync } = require('child_process');
+          const path = require('path');
+
+          const PLATFORMS = {
+            'darwin-arm64': '@acp-protocol/mcp-darwin-arm64',
+            'darwin-x64': '@acp-protocol/mcp-darwin-x64',
+            'linux-x64': '@acp-protocol/mcp-linux-x64-gnu',
+            'linux-arm64': '@acp-protocol/mcp-linux-arm64-gnu',
+            'win32-x64': '@acp-protocol/mcp-win32-x64',
+          };
+
+          const MUSL_FALLBACKS = {
+            'linux-x64': '@acp-protocol/mcp-linux-x64-musl',
+            'linux-arm64': '@acp-protocol/mcp-linux-arm64-musl',
+          };
+
+          const platformKey = `${process.platform}-${process.arch}`;
+          let pkg = PLATFORMS[platformKey];
+
+          if (!pkg) {
+            console.error(`Unsupported platform: ${platformKey}`);
+            process.exit(1);
+          }
+
+          function tryResolve(packageName) {
+            try {
+              const pkgPath = require.resolve(`${packageName}/package.json`);
+              const pkgDir = path.dirname(pkgPath);
+              const binName = process.platform === 'win32' ? 'acp-mcp.exe' : 'acp-mcp';
+              return path.join(pkgDir, 'bin', binName);
+            } catch {
+              return null;
+            }
+          }
+
+          let binaryPath = tryResolve(pkg);
+
+          if (!binaryPath && MUSL_FALLBACKS[platformKey]) {
+            binaryPath = tryResolve(MUSL_FALLBACKS[platformKey]);
+          }
+
+          if (!binaryPath) {
+            console.error(`Could not find ACP MCP binary for ${platformKey}`);
+            console.error('Try reinstalling: npm install -g @acp-protocol/mcp');
+            process.exit(1);
+          }
+
+          try {
+            execFileSync(binaryPath, process.argv.slice(2), { stdio: 'inherit' });
+          } catch (error) {
+            if (error.status !== undefined) {
+              process.exit(error.status);
+            }
+            throw error;
+          }
+          WRAPPER
+
+          chmod +x "$main_dir/bin/acp-mcp.js"
+
+      - name: Publish platform packages to npm
+        run: |
+          for pkg_dir in npm-packages/@acp-protocol/mcp-*; do
+            if [ -d "$pkg_dir" ]; then
+              echo "Publishing $(basename $pkg_dir)..."
+              cd "$pkg_dir"
+              npm publish --access public || echo "Failed to publish $(basename $pkg_dir), may already exist"
+              cd -
+            fi
+          done
+
+      - name: Publish main package to npm
+        run: |
+          cd npm-packages/@acp-protocol/mcp
+          npm publish --access public
+
+  update-homebrew:
+    name: Update Homebrew Tap
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Extract version
+        id: version
+        run: echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+      - name: Download artifacts for SHA256
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Generate Homebrew formula
+        run: |
+          VERSION=${{ steps.version.outputs.version }}
+
+          SHA_DARWIN_ARM64=$(cat artifacts/acp-mcp-aarch64-apple-darwin/acp-mcp-aarch64-apple-darwin.tar.gz.sha256 | awk '{print $1}')
+          SHA_DARWIN_X64=$(cat artifacts/acp-mcp-x86_64-apple-darwin/acp-mcp-x86_64-apple-darwin.tar.gz.sha256 | awk '{print $1}')
+          SHA_LINUX_ARM64=$(cat artifacts/acp-mcp-aarch64-unknown-linux-gnu/acp-mcp-aarch64-unknown-linux-gnu.tar.gz.sha256 | awk '{print $1}')
+          SHA_LINUX_X64=$(cat artifacts/acp-mcp-x86_64-unknown-linux-gnu/acp-mcp-x86_64-unknown-linux-gnu.tar.gz.sha256 | awk '{print $1}')
+
+          cat > acp-mcp.rb << EOF
+          class AcpMcp < Formula
+            desc "ACP MCP Server - Model Context Protocol server for AI tools"
+            homepage "https://github.com/acp-protocol/acp-mcp"
+            version "${VERSION}"
+            license "MIT"
+
+            on_macos do
+              on_arm do
+                url "https://github.com/acp-protocol/acp-mcp/releases/download/v${VERSION}/acp-mcp-aarch64-apple-darwin.tar.gz"
+                sha256 "${SHA_DARWIN_ARM64}"
+              end
+              on_intel do
+                url "https://github.com/acp-protocol/acp-mcp/releases/download/v${VERSION}/acp-mcp-x86_64-apple-darwin.tar.gz"
+                sha256 "${SHA_DARWIN_X64}"
+              end
+            end
+
+            on_linux do
+              on_arm do
+                url "https://github.com/acp-protocol/acp-mcp/releases/download/v${VERSION}/acp-mcp-aarch64-unknown-linux-gnu.tar.gz"
+                sha256 "${SHA_LINUX_ARM64}"
+              end
+              on_intel do
+                url "https://github.com/acp-protocol/acp-mcp/releases/download/v${VERSION}/acp-mcp-x86_64-unknown-linux-gnu.tar.gz"
+                sha256 "${SHA_LINUX_X64}"
+              end
+            end
+
+            def install
+              bin.install "acp-mcp"
+            end
+
+            test do
+              assert_match "acp-mcp", shell_output("#{bin}/acp-mcp --version")
+            end
+          end
+          EOF
+
+          cat acp-mcp.rb
+
+      - name: Update Homebrew tap
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          repository: acp-protocol/homebrew-tap
+          event-type: update-formula
+          client-payload: '{"formula": "acp-mcp", "version": "${{ steps.version.outputs.version }}"}'
