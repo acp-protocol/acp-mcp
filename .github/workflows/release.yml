@@ -296,6 +296,8 @@ jobs:
           chmod +x "$main_dir/bin/acp-mcp.js"
 
       - name: Publish platform packages to npm
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN_INITIAL }}
         run: |
           for pkg_dir in npm-packages/@acp-protocol/mcp-*; do
             if [ -d "$pkg_dir" ]; then
@@ -307,6 +309,8 @@ jobs:
           done
 
       - name: Publish main package to npm
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN_INITIAL }}
         run: |
           cd npm-packages/@acp-protocol/mcp
           npm publish --access public
