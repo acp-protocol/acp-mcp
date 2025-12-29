@@ -250,10 +250,7 @@ fn can_include(
 }
 
 /// Mark conflicting sections as excluded
-fn mark_conflicts(
-    section: &super::types::PrimerSection,
-    excluded: &mut HashSet<String>,
-) {
+fn mark_conflicts(section: &super::types::PrimerSection, excluded: &mut HashSet<String>) {
     for conflict in &section.conflicts_with {
         excluded.insert(conflict.clone());
     }
@@ -294,11 +291,7 @@ fn is_category_compatible(section: &ScoredSection, categories: &Option<Vec<Strin
 /// Check if section is compatible with tag filter
 fn is_tag_compatible(section: &ScoredSection, tags: &Option<Vec<String>>) -> bool {
     match tags {
-        Some(filter_tags) => section
-            .section
-            .tags
-            .iter()
-            .any(|t| filter_tags.contains(t)),
+        Some(filter_tags) => section.section.tags.iter().any(|t| filter_tags.contains(t)),
         None => true,
     }
 }
@@ -325,7 +318,15 @@ fn include_dependencies(
             }
 
             // Recursively include its dependencies first
-            include_dependencies(dep, all_sections, selected, included, excluded, tokens_used, budget);
+            include_dependencies(
+                dep,
+                all_sections,
+                selected,
+                included,
+                excluded,
+                tokens_used,
+                budget,
+            );
 
             // Include the dependency
             if *tokens_used + dep.tokens <= budget {
@@ -350,12 +351,7 @@ mod tests {
         DimensionWeights, OutputFormat, Preset, SectionFormats, SectionValue, TokenCount,
     };
 
-    fn create_test_section(
-        id: &str,
-        tokens: usize,
-        safety: i32,
-        required: bool,
-    ) -> ScoredSection {
+    fn create_test_section(id: &str, tokens: usize, safety: i32, required: bool) -> ScoredSection {
         let section = super::super::types::PrimerSection {
             id: id.to_string(),
             name: id.to_string(),
@@ -420,10 +416,7 @@ mod tests {
         let result = select_sections(&sections, &request);
 
         // Required section should be included first
-        assert!(result
-            .selected
-            .iter()
-            .any(|s| s.section.id == "required"));
+        assert!(result.selected.iter().any(|s| s.section.id == "required"));
         assert!(matches!(
             result.selected[0].selection_reason,
             SelectionReason::Required

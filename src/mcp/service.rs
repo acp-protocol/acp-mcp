@@ -6,12 +6,7 @@
 //! Implements the ServerHandler trait for ACP MCP integration.
 //! Provides tools and resources for AI agent context generation.
 
-use rmcp::{
-    ErrorData as McpError,
-    ServerHandler,
-    model::*,
-    schemars,
-};
+use rmcp::{model::*, schemars, ErrorData as McpError, ServerHandler};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -93,7 +88,11 @@ fn default_preset() -> String {
 }
 
 fn default_capabilities() -> Vec<String> {
-    vec!["shell".to_string(), "file-read".to_string(), "file-write".to_string()]
+    vec![
+        "shell".to_string(),
+        "file-read".to_string(),
+        "file-write".to_string(),
+    ]
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -138,7 +137,10 @@ fn schema_to_json_object<T: JsonSchema>() -> Arc<serde_json::Map<String, serde_j
 
 fn empty_schema() -> Arc<serde_json::Map<String, serde_json::Value>> {
     let mut map = serde_json::Map::new();
-    map.insert("type".to_string(), serde_json::Value::String("object".to_string()));
+    map.insert(
+        "type".to_string(),
+        serde_json::Value::String("object".to_string()),
+    );
     Arc::new(map)
 }
 
@@ -196,15 +198,19 @@ impl AcpMcpService {
     async fn handle_get_architecture(&self) -> Result<CallToolResult, McpError> {
         let cache = self.state.cache_async().await;
 
-        let domains: Vec<DomainSummary> = cache.domains.iter().map(|(name, domain)| {
-            DomainSummary {
+        let domains: Vec<DomainSummary> = cache
+            .domains
+            .iter()
+            .map(|(name, domain)| DomainSummary {
                 name: name.clone(),
                 description: domain.description.clone(),
                 file_count: domain.files.len(),
-            }
-        }).collect();
+            })
+            .collect();
 
-        let languages: Vec<String> = cache.files.values()
+        let languages: Vec<String> = cache
+            .files
+            .values()
             .map(|f| format!("{:?}", f.language))
             .collect::<std::collections::HashSet<_>>()
             .into_iter()
@@ -228,7 +234,8 @@ impl AcpMcpService {
     async fn handle_get_file_context(&self, path: String) -> Result<CallToolResult, McpError> {
         let cache = self.state.cache_async().await;
 
-        let file = cache.get_file(&path)
+        let file = cache
+            .get_file(&path)
             .ok_or_else(|| McpError::invalid_params(format!("File not found: {}", path), None))?;
 
         let json = serde_json::to_string_pretty(file)
@@ -241,7 +248,9 @@ impl AcpMcpService {
     async fn handle_get_symbol_context(&self, name: String) -> Result<CallToolResult, McpError> {
         let cache = self.state.cache_async().await;
 
-        let symbol = cache.symbols.get(&name)
+        let symbol = cache
+            .symbols
+            .get(&name)
             .ok_or_else(|| McpError::invalid_params(format!("Symbol not found: {}", name), None))?;
 
         // Get callers and callees from graph (if available)
@@ -277,7 +286,9 @@ impl AcpMcpService {
     async fn handle_get_domain_files(&self, name: String) -> Result<CallToolResult, McpError> {
         let cache = self.state.cache_async().await;
 
-        let domain = cache.domains.get(&name)
+        let domain = cache
+            .domains
+            .get(&name)
             .ok_or_else(|| McpError::invalid_params(format!("Domain not found: {}", name), None))?;
 
         let json = serde_json::to_string_pretty(domain)
@@ -310,7 +321,8 @@ impl AcpMcpService {
 
         let hotpaths = if let Some(ref graph) = cache.graph {
             // Count callers for each symbol
-            let mut symbol_callers: Vec<(&String, usize)> = graph.reverse
+            let mut symbol_callers: Vec<(&String, usize)> = graph
+                .reverse
                 .iter()
                 .map(|(name, callers)| (name, callers.len()))
                 .collect();
@@ -345,11 +357,13 @@ impl AcpMcpService {
     async fn handle_expand_variable(&self, name: String) -> Result<CallToolResult, McpError> {
         let vars_guard = self.state.vars().await;
 
-        let vars = vars_guard.as_ref()
+        let vars = vars_guard
+            .as_ref()
             .ok_or_else(|| McpError::invalid_params("No vars file loaded".to_string(), None))?;
 
-        let variable = vars.variables.get(&name)
-            .ok_or_else(|| McpError::invalid_params(format!("Variable not found: {}", name), None))?;
+        let variable = vars.variables.get(&name).ok_or_else(|| {
+            McpError::invalid_params(format!("Variable not found: {}", name), None)
+        })?;
 
         let json = serde_json::to_string_pretty(variable)
             .map_err(|e| McpError::internal_error(format!("JSON error: {}", e), None))?;
@@ -358,8 +372,11 @@ impl AcpMcpService {
     }
 
     /// Generate a primer for AI context using value-based optimization
-    async fn handle_generate_primer(&self, params: GeneratePrimerParams) -> Result<CallToolResult, McpError> {
-        use crate::primer::{PrimerGenerator, PrimerRequest, OutputFormat, Preset};
+    async fn handle_generate_primer(
+        &self,
+        params: GeneratePrimerParams,
+    ) -> Result<CallToolResult, McpError> {
+        use crate::primer::{OutputFormat, Preset, PrimerGenerator, PrimerRequest};
 
         let cache = self.state.cache_async().await;
 
@@ -406,26 +423,25 @@ impl AcpMcpService {
 
     /// Parse tool arguments from request
     fn parse_args<T: for<'de> Deserialize<'de>>(
-        args: Option<serde_json::Map<String, serde_json::Value>>
+        args: Option<serde_json::Map<String, serde_json::Value>>,
     ) -> Result<T, McpError> {
         let value = serde_json::Value::Object(args.unwrap_or_default());
-        serde_json::from_value(value)
-            .map_err(|e| McpError::invalid_params(e.to_string(), None))
+        serde_json::from_value(value).map_err(|e| McpError::invalid_params(e.to_string(), None))
     }
 }
 
+#[allow(clippy::manual_async_fn)]
 impl ServerHandler for AcpMcpService {
     fn get_info(&self) -> ServerInfo {
         ServerInfo {
             protocol_version: ProtocolVersion::V_2024_11_05,
-            capabilities: ServerCapabilities::builder()
-                .enable_tools()
-                .build(),
+            capabilities: ServerCapabilities::builder().enable_tools().build(),
             server_info: Implementation::from_build_env(),
             instructions: Some(
                 "ACP (AI Context Protocol) server providing codebase context for AI agents. \
                  Use acp_get_architecture first to understand the project structure, then \
-                 use other tools to explore specific files, symbols, and domains.".to_string()
+                 use other tools to explore specific files, symbols, and domains."
+                    .to_string(),
             ),
         }
     }
@@ -451,9 +467,7 @@ impl ServerHandler for AcpMcpService {
         async move {
             let tool_name: &str = &request.name;
             match tool_name {
-                "acp_get_architecture" => {
-                    self.handle_get_architecture().await
-                }
+                "acp_get_architecture" => self.handle_get_architecture().await,
                 "acp_get_file_context" => {
                     let params: GetFileContextParams = Self::parse_args(request.arguments)?;
                     self.handle_get_file_context(params.path).await
@@ -470,9 +484,7 @@ impl ServerHandler for AcpMcpService {
                     let params: CheckConstraintsParams = Self::parse_args(request.arguments)?;
                     self.handle_check_constraints(params.path).await
                 }
-                "acp_get_hotpaths" => {
-                    self.handle_get_hotpaths().await
-                }
+                "acp_get_hotpaths" => self.handle_get_hotpaths().await,
                 "acp_expand_variable" => {
                     let params: ExpandVariableParams = Self::parse_args(request.arguments)?;
                     self.handle_expand_variable(params.name).await
@@ -481,9 +493,10 @@ impl ServerHandler for AcpMcpService {
                     let params: GeneratePrimerParams = Self::parse_args(request.arguments)?;
                     self.handle_generate_primer(params).await
                 }
-                _ => {
-                    Err(McpError::invalid_params(format!("Unknown tool: {}", request.name), None))
-                }
+                _ => Err(McpError::invalid_params(
+                    format!("Unknown tool: {}", request.name),
+                    None,
+                )),
             }
         }
     }
@@ -528,8 +541,14 @@ mod tests {
 
                 let json = parsed.unwrap();
                 assert!(json.get("content").is_some(), "Should have content field");
-                assert!(json.get("tokens_used").is_some(), "Should have tokens_used field");
-                assert!(json.get("token_budget").is_some(), "Should have token_budget field");
+                assert!(
+                    json.get("tokens_used").is_some(),
+                    "Should have tokens_used field"
+                );
+                assert!(
+                    json.get("token_budget").is_some(),
+                    "Should have token_budget field"
+                );
             }
         }
     }
@@ -573,8 +592,15 @@ mod tests {
         if let Some(content) = result.unwrap().content.first() {
             if let Some(text) = content.as_text() {
                 let json: serde_json::Value = serde_json::from_str(text.text.as_str()).unwrap();
-                let tokens_used = json.get("tokens_used").and_then(|v| v.as_u64()).unwrap_or(0);
-                assert!(tokens_used <= 500, "Tokens used {} should be <= budget 500", tokens_used);
+                let tokens_used = json
+                    .get("tokens_used")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0);
+                assert!(
+                    tokens_used <= 500,
+                    "Tokens used {} should be <= budget 500",
+                    tokens_used
+                );
             }
         }
     }

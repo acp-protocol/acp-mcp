@@ -175,6 +175,7 @@ impl Default for TokenCount {
 }
 
 impl TokenCount {
+    #[allow(dead_code)]
     pub fn is_dynamic(&self) -> bool {
         matches!(self, Self::Dynamic)
     }
@@ -565,7 +566,11 @@ impl Default for GeneratePrimerRequest {
             token_budget: 4000,
             format: OutputFormat::Markdown,
             preset: Preset::Balanced,
-            capabilities: vec!["shell".to_string(), "file-read".to_string(), "file-write".to_string()],
+            capabilities: vec![
+                "shell".to_string(),
+                "file-read".to_string(),
+                "file-write".to_string(),
+            ],
             categories: None,
             tags: None,
             force_include: vec![],
@@ -575,6 +580,7 @@ impl Default for GeneratePrimerRequest {
 
 /// Result of section selection
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct SelectedSection {
     /// The section definition
     pub section: PrimerSection,
@@ -587,6 +593,7 @@ pub struct SelectedSection {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub enum SelectionReason {
     Required,
     ConditionallyRequired(String),

@@ -4,7 +4,9 @@
 //! @acp:layer service
 
 use super::state::ProjectState;
-use super::types::{DimensionWeights, ModifierDimension, PrimerSection, SectionValue, ValueModifier};
+use super::types::{
+    DimensionWeights, ModifierDimension, PrimerSection, SectionValue, ValueModifier,
+};
 
 /// Scored section with all calculated values
 #[derive(Debug, Clone)]

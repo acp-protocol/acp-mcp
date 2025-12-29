@@ -6,15 +6,15 @@
 //! Provides MCP server capabilities for AI agents like Claude Desktop.
 //! Exposes ACP cache, symbols, and domains as MCP tools and resources.
 
-mod tools;
 mod service;
+mod tools;
 
 pub use service::AcpMcpService;
 
-use std::path::Path;
 use rmcp::ServiceExt;
+use std::path::Path;
 use tokio::io::{stdin, stdout};
-use tracing::{info, error};
+use tracing::{error, info};
 
 use crate::state::AppState;
 

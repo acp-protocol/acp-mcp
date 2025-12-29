@@ -188,11 +188,7 @@ impl<'a> PrimerRenderer<'a> {
     }
 
     /// Extract domains from cache
-    fn extract_domains(
-        &self,
-        cache: &Cache,
-        _config: &super::types::SectionData,
-    ) -> Vec<Value> {
+    fn extract_domains(&self, cache: &Cache, _config: &super::types::SectionData) -> Vec<Value> {
         cache
             .domains
             .iter()
@@ -209,11 +205,7 @@ impl<'a> PrimerRenderer<'a> {
     }
 
     /// Extract constraints (protected files) from cache
-    fn extract_constraints(
-        &self,
-        cache: &Cache,
-        config: &super::types::SectionData,
-    ) -> Vec<Value> {
+    fn extract_constraints(&self, cache: &Cache, config: &super::types::SectionData) -> Vec<Value> {
         use acp::constraints::LockLevel;
 
         let Some(ref constraints) = cache.constraints else {
@@ -232,17 +224,20 @@ impl<'a> PrimerRenderer<'a> {
             .by_file
             .iter()
             .filter(|(_, c)| {
-                c.mutation.as_ref().map(|m| {
-                    let level_str = match m.level {
-                        LockLevel::Frozen => "frozen",
-                        LockLevel::Restricted => "restricted",
-                        LockLevel::ApprovalRequired => "approval-required",
-                        LockLevel::TestsRequired => "tests-required",
-                        LockLevel::DocsRequired => "docs-required",
-                        _ => "normal",
-                    };
-                    filter_levels.contains(&level_str)
-                }).unwrap_or(false)
+                c.mutation
+                    .as_ref()
+                    .map(|m| {
+                        let level_str = match m.level {
+                            LockLevel::Frozen => "frozen",
+                            LockLevel::Restricted => "restricted",
+                            LockLevel::ApprovalRequired => "approval-required",
+                            LockLevel::TestsRequired => "tests-required",
+                            LockLevel::DocsRequired => "docs-required",
+                            _ => "normal",
+                        };
+                        filter_levels.contains(&level_str)
+                    })
+                    .unwrap_or(false)
             })
             .map(|(path, c)| {
                 let mut obj = serde_json::Map::new();
@@ -292,14 +287,7 @@ impl<'a> PrimerRenderer<'a> {
     fn extract_entry_points(&self, cache: &Cache) -> Vec<Value> {
         // Look for common entry point patterns
         let entry_patterns = [
-            "main.rs",
-            "main.ts",
-            "main.py",
-            "index.ts",
-            "index.js",
-            "app.ts",
-            "app.py",
-            "mod.rs",
+            "main.rs", "main.ts", "main.py", "index.ts", "index.js", "app.ts", "app.py", "mod.rs",
         ];
 
         cache

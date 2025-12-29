@@ -41,9 +41,9 @@ async fn main() -> anyhow::Result<()> {
     init_logging(&cli.log_level);
 
     // Determine project root
-    let project_root = cli.directory.unwrap_or_else(|| {
-        std::env::current_dir().expect("Failed to get current directory")
-    });
+    let project_root = cli
+        .directory
+        .unwrap_or_else(|| std::env::current_dir().expect("Failed to get current directory"));
 
     info!("ACP MCP Server starting");
     info!("Project root: {}", project_root.display());

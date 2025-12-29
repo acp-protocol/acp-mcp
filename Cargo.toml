@@ -14,9 +14,9 @@ name = "acp-mcp"
 path = "src/main.rs"
 
 [dependencies]
-# Core ACP library (use local path for development, git for release)
-acp = { path = "../acp-cli" }
-# acp = { git = "https://github.com/acp-protocol/acp-cli" }
+# Core ACP library (use local path for development, version for release)
+# acp = { path = "../acp-cli", package = "acp-protocol" }
+acp = { version = "0.3.0", package = "acp-protocol" }
 
 # MCP - Model Context Protocol
 rmcp = { version = "0.8", features = ["server", "transport-io", "macros"] }

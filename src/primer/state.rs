@@ -155,12 +155,14 @@ impl ProjectState {
     }
 
     /// Set variable counts from vars file
+    #[allow(dead_code)]
     pub fn with_variable_count(mut self, count: usize) -> Self {
         self.variables.count = count;
         self
     }
 
     /// Set attempt counts
+    #[allow(dead_code)]
     pub fn with_attempts(mut self, active: usize, total: usize) -> Self {
         self.attempts.active_count = active;
         self.attempts.total_count = total;

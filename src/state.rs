@@ -25,6 +25,7 @@ struct AppStateInner {
     /// Project root directory
     project_root: PathBuf,
     /// Loaded ACP config
+    #[allow(dead_code)]
     config: RwLock<Config>,
     /// Loaded ACP cache
     cache: RwLock<Cache>,
@@ -108,6 +109,7 @@ impl AppState {
     }
 
     /// Get read access to config
+    #[allow(dead_code)]
     pub async fn config(&self) -> tokio::sync::RwLockReadGuard<'_, Config> {
         self.inner.config.read().await
     }

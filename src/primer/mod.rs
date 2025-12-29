@@ -27,9 +27,7 @@ use rendering::PrimerRenderer;
 use scoring::score_sections;
 use selection::select_sections;
 use state::ProjectState;
-use types::{
-    GeneratePrimerRequest, PrimerDefaults, PrimerSection,
-};
+use types::{GeneratePrimerRequest, PrimerDefaults, PrimerSection};
 
 /// Embedded primer defaults (from primers/primer.defaults.json)
 const PRIMER_DEFAULTS_JSON: &str = include_str!("../../primers/primer.defaults.json");
@@ -39,6 +37,7 @@ pub struct PrimerGenerator {
     defaults: PrimerDefaults,
 }
 
+#[allow(dead_code)]
 impl PrimerGenerator {
     /// Create a new primer generator with embedded defaults
     pub fn new() -> Result<Self, PrimerError> {
@@ -151,6 +150,7 @@ impl Default for PrimerGenerator {
 
 /// Primer generation errors
 #[derive(Debug)]
+#[allow(dead_code)]
 pub enum PrimerError {
     ParseDefaults(String),
     Serialize(String),
