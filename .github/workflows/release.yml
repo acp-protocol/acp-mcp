@@ -50,7 +50,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Clone acp-cli dependency
-        run: git clone --depth 1 https://github.com/acp-protocol/acp-cli.git ../acp-cli
+        run: git clone --depth 1 --recurse-submodules https://github.com/acp-protocol/acp-cli.git ../acp-cli
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable

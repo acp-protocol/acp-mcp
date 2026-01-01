@@ -16,7 +16,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Clone acp-cli dependency
-        run: git clone --depth 1 https://github.com/acp-protocol/acp-cli.git ../acp-cli
+        run: git clone --depth 1 --recurse-submodules https://github.com/acp-protocol/acp-cli.git ../acp-cli
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo check
@@ -27,7 +27,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Clone acp-cli dependency
-        run: git clone --depth 1 https://github.com/acp-protocol/acp-cli.git ../acp-cli
+        run: git clone --depth 1 --recurse-submodules https://github.com/acp-protocol/acp-cli.git ../acp-cli
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo test
@@ -38,7 +38,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Clone acp-cli dependency
-        run: git clone --depth 1 https://github.com/acp-protocol/acp-cli.git ../acp-cli
+        run: git clone --depth 1 --recurse-submodules https://github.com/acp-protocol/acp-cli.git ../acp-cli
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
