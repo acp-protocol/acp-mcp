@@ -49,6 +49,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Clone acp-cli dependency
+        run: git clone --depth 1 https://github.com/acp-protocol/acp-cli.git ../acp-cli
+
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -296,24 +299,20 @@ jobs:
           chmod +x "$main_dir/bin/acp-mcp.js"
 
       - name: Publish platform packages to npm
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN_INITIAL }}
         run: |
           for pkg_dir in npm-packages/@acp-protocol/mcp-*; do
             if [ -d "$pkg_dir" ]; then
               echo "Publishing $(basename $pkg_dir)..."
               cd "$pkg_dir"
-              npm publish --access public || echo "Failed to publish $(basename $pkg_dir), may already exist"
+              npm publish --access public --provenance || echo "Failed to publish $(basename $pkg_dir), may already exist"
               cd -
             fi
           done
 
       - name: Publish main package to npm
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN_INITIAL }}
         run: |
           cd npm-packages/@acp-protocol/mcp
-          npm publish --access public
+          npm publish --access public --provenance
 
   update-homebrew:
     name: Update Homebrew Tap
