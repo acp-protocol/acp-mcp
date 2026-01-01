@@ -95,6 +95,18 @@ fn default_capabilities() -> Vec<String> {
     ]
 }
 
+/// RFC-0015: Context operation for acp_context tool
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct GetContextParams {
+    /// Operation type: "create", "modify", "debug", or "explore"
+    pub operation: String,
+    /// For create: directory path. For modify/debug: file path. For explore: optional domain.
+    pub target: Option<String>,
+    /// For modify: whether to find files that use this file
+    #[serde(default)]
+    pub find_usages: bool,
+}
+
 #[derive(Debug, Deserialize, JsonSchema)]
 #[allow(dead_code)]
 struct EmptyParams {}
@@ -190,6 +202,11 @@ impl AcpMcpService {
                 "acp_generate_primer",
                 "Generate an optimized context primer for the codebase within a token budget. Returns the most important information about the project structure, key files, and critical symbols.",
                 schema_to_json_object::<GeneratePrimerParams>(),
+            ),
+            Tool::new(
+                "acp_context",
+                "RFC-0015: Get operation-specific context for AI agent tasks. Operations: 'create' (naming conventions for new files), 'modify' (constraints/importers for existing files), 'debug' (related files/symbols), 'explore' (project overview/domains).",
+                schema_to_json_object::<GetContextParams>(),
             ),
         ]
     }
@@ -421,6 +438,261 @@ impl AcpMcpService {
         Ok(CallToolResult::success(vec![Content::text(json)]))
     }
 
+    /// RFC-0015: Handle acp_context tool - operation-specific context
+    async fn handle_get_context(&self, params: GetContextParams) -> Result<CallToolResult, McpError> {
+        let cache = self.state.cache_async().await;
+
+        let result = match params.operation.as_str() {
+            "create" => {
+                let directory = params.target.ok_or_else(|| {
+                    McpError::invalid_params("'target' (directory path) required for create operation".to_string(), None)
+                })?;
+                self.generate_create_context(&cache, &directory)
+            }
+            "modify" => {
+                let file = params.target.ok_or_else(|| {
+                    McpError::invalid_params("'target' (file path) required for modify operation".to_string(), None)
+                })?;
+                self.generate_modify_context(&cache, &file, params.find_usages)
+            }
+            "debug" => {
+                let target = params.target.ok_or_else(|| {
+                    McpError::invalid_params("'target' (file or symbol) required for debug operation".to_string(), None)
+                })?;
+                self.generate_debug_context(&cache, &target)
+            }
+            "explore" => {
+                self.generate_explore_context(&cache, params.target.as_deref())
+            }
+            _ => {
+                return Err(McpError::invalid_params(
+                    format!("Unknown operation: {}. Use: create, modify, debug, or explore", params.operation),
+                    None,
+                ));
+            }
+        };
+
+        let json = serde_json::to_string_pretty(&result)
+            .map_err(|e| McpError::internal_error(format!("JSON error: {}", e), None))?;
+
+        Ok(CallToolResult::success(vec![Content::text(json)]))
+    }
+
+    /// Generate context for creating new files
+    fn generate_create_context(&self, cache: &acp::cache::Cache, directory: &str) -> serde_json::Value {
+        // Find naming conventions for this directory
+        let naming = cache
+            .conventions
+            .file_naming
+            .iter()
+            .find(|n| n.directory == directory)
+            .or_else(|| {
+                cache.conventions.file_naming
+                    .iter()
+                    .filter(|n| directory.starts_with(&n.directory))
+                    .max_by_key(|n| n.directory.len())
+            });
+
+        // Detect primary language in directory
+        let language = self.detect_directory_language(cache, directory);
+
+        // Get import style from conventions
+        let import_style = cache.conventions.imports.as_ref().map(|i| {
+            serde_json::json!({
+                "module_system": i.module_system.as_ref()
+                    .map(|m| format!("{:?}", m).to_lowercase())
+                    .unwrap_or_else(|| "esm".to_string()),
+                "path_style": i.path_style.as_ref()
+                    .map(|p| format!("{:?}", p).to_lowercase())
+                    .unwrap_or_else(|| "relative".to_string()),
+                "index_exports": i.index_exports
+            })
+        });
+
+        // Find similar files in the directory
+        let similar_files: Vec<&String> = cache.files.keys()
+            .filter(|p| {
+                std::path::Path::new(p)
+                    .parent()
+                    .map(|parent| parent.to_string_lossy() == directory)
+                    .unwrap_or(false)
+            })
+            .take(5)
+            .collect();
+
+        serde_json::json!({
+            "operation": "create",
+            "directory": directory,
+            "language": language,
+            "naming_convention": naming.map(|n| serde_json::json!({
+                "pattern": n.pattern,
+                "confidence": n.confidence,
+                "examples": n.examples
+            })),
+            "import_style": import_style,
+            "similar_files": similar_files,
+            "recommended_pattern": naming.map(|n| &n.pattern)
+        })
+    }
+
+    /// Generate context for modifying existing files
+    fn generate_modify_context(&self, cache: &acp::cache::Cache, file: &str, _find_usages: bool) -> serde_json::Value {
+        let file_entry = cache.files.get(file);
+
+        // Get importers from the file entry
+        let importers = file_entry
+            .map(|f| &f.imported_by)
+            .map(|v| v.iter().collect::<Vec<_>>())
+            .unwrap_or_default();
+
+        // Get file constraints
+        let constraints = cache.constraints.as_ref().and_then(|c| {
+            c.by_file.get(file).and_then(|fc| {
+                fc.mutation.as_ref().map(|m| serde_json::json!({
+                    "level": format!("{:?}", m.level).to_lowercase(),
+                    "reason": m.reason
+                }))
+            })
+        });
+
+        // Get symbols in this file
+        let symbols = file_entry.map(|f| &f.exports).cloned().unwrap_or_default();
+
+        // Get domain
+        let domain = cache.domains.iter()
+            .find(|(_, d)| d.files.contains(&file.to_string()))
+            .map(|(name, _)| name.clone());
+
+        serde_json::json!({
+            "operation": "modify",
+            "file": file,
+            "importers": importers,
+            "importer_count": importers.len(),
+            "constraints": constraints,
+            "symbols": symbols,
+            "domain": domain
+        })
+    }
+
+    /// Generate context for debugging
+    fn generate_debug_context(&self, cache: &acp::cache::Cache, target: &str) -> serde_json::Value {
+        // Target could be a file or symbol
+        let (file_path, symbols_info) = if cache.files.contains_key(target) {
+            // It's a file
+            let file = cache.files.get(target).unwrap();
+            let symbols: Vec<serde_json::Value> = file.exports.iter()
+                .filter_map(|name| cache.symbols.get(name))
+                .map(|s| serde_json::json!({
+                    "name": s.name,
+                    "type": format!("{:?}", s.symbol_type).to_lowercase(),
+                    "purpose": s.purpose
+                }))
+                .collect();
+            (target.to_string(), symbols)
+        } else if let Some(symbol) = cache.symbols.get(target) {
+            // It's a symbol
+            (symbol.file.clone(), vec![serde_json::json!({
+                "name": symbol.name,
+                "type": format!("{:?}", symbol.symbol_type).to_lowercase(),
+                "purpose": symbol.purpose
+            })])
+        } else {
+            return serde_json::json!({
+                "operation": "debug",
+                "error": format!("Target not found: {}. Provide a file path or symbol name.", target)
+            });
+        };
+
+        // Get related files (imports)
+        let related_files = cache.files.get(&file_path)
+            .map(|f| &f.imports)
+            .cloned()
+            .unwrap_or_default();
+
+        // Get hotpaths through this code
+        let hotpaths: Vec<String> = if let Some(ref graph) = cache.graph {
+            graph.reverse.iter()
+                .filter(|(name, callers)| {
+                    callers.len() >= 3 &&
+                    (name.as_str() == target || file_path.contains(name.as_str()))
+                })
+                .map(|(name, _)| name.clone())
+                .take(5)
+                .collect()
+        } else {
+            Vec::new()
+        };
+
+        serde_json::json!({
+            "operation": "debug",
+            "target": target,
+            "file": file_path,
+            "related_files": related_files,
+            "symbols": symbols_info,
+            "hotpaths": hotpaths
+        })
+    }
+
+    /// Generate context for exploring the codebase
+    fn generate_explore_context(&self, cache: &acp::cache::Cache, domain_filter: Option<&str>) -> serde_json::Value {
+        let stats = serde_json::json!({
+            "files": cache.stats.files,
+            "symbols": cache.stats.symbols,
+            "lines": cache.stats.lines,
+            "primary_language": cache.stats.primary_language,
+            "annotation_coverage": cache.stats.annotation_coverage
+        });
+
+        // Get domains
+        let domains: Vec<serde_json::Value> = cache.domains.iter()
+            .filter(|(name, _)| domain_filter.is_none_or(|f| name.contains(f)))
+            .map(|(name, d)| serde_json::json!({
+                "name": name,
+                "file_count": d.files.len(),
+                "symbol_count": d.symbols.len(),
+                "description": d.description
+            }))
+            .collect();
+
+        // Get key files (most imported)
+        let mut key_files: Vec<(&String, usize)> = cache.files.iter()
+            .map(|(path, entry)| (path, entry.imported_by.len()))
+            .collect();
+        key_files.sort_by(|a, b| b.1.cmp(&a.1));
+        let key_files: Vec<&String> = key_files.iter().take(10).map(|(p, _)| *p).collect();
+
+        serde_json::json!({
+            "operation": "explore",
+            "domain_filter": domain_filter,
+            "stats": stats,
+            "domains": domains,
+            "key_files": key_files
+        })
+    }
+
+    /// Detect the primary language in a directory
+    fn detect_directory_language(&self, cache: &acp::cache::Cache, directory: &str) -> Option<String> {
+        use std::collections::HashMap;
+
+        let mut lang_counts: HashMap<String, usize> = HashMap::new();
+
+        for (path, file) in &cache.files {
+            let parent = std::path::Path::new(path)
+                .parent()
+                .map(|p| p.to_string_lossy().to_string())
+                .unwrap_or_default();
+
+            if parent == directory || parent.starts_with(&format!("{}/", directory)) {
+                let lang = format!("{:?}", file.language).to_lowercase();
+                *lang_counts.entry(lang).or_insert(0) += 1;
+            }
+        }
+
+        lang_counts.into_iter()
+            .max_by_key(|(_, count)| *count)
+            .map(|(lang, _)| lang)
+    }
+
     /// Parse tool arguments from request
     fn parse_args<T: for<'de> Deserialize<'de>>(
         args: Option<serde_json::Map<String, serde_json::Value>>,
@@ -492,6 +764,10 @@ impl ServerHandler for AcpMcpService {
                 "acp_generate_primer" => {
                     let params: GeneratePrimerParams = Self::parse_args(request.arguments)?;
                     self.handle_generate_primer(params).await
+                }
+                "acp_context" => {
+                    let params: GetContextParams = Self::parse_args(request.arguments)?;
+                    self.handle_get_context(params).await
                 }
                 _ => Err(McpError::invalid_params(
                     format!("Unknown tool: {}", request.name),
@@ -603,5 +879,78 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[tokio::test]
+    async fn test_acp_context_explore() {
+        let service = create_test_service();
+
+        let params = GetContextParams {
+            operation: "explore".to_string(),
+            target: None,
+            find_usages: false,
+        };
+
+        let result = service.handle_get_context(params).await;
+        assert!(result.is_ok(), "Explore context should succeed");
+
+        if let Some(content) = result.unwrap().content.first() {
+            if let Some(text) = content.as_text() {
+                let json: serde_json::Value = serde_json::from_str(text.text.as_str()).unwrap();
+                assert_eq!(json.get("operation").and_then(|v| v.as_str()), Some("explore"));
+                assert!(json.get("stats").is_some(), "Should have stats");
+                assert!(json.get("domains").is_some(), "Should have domains");
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_acp_context_create() {
+        let service = create_test_service();
+
+        let params = GetContextParams {
+            operation: "create".to_string(),
+            target: Some("src".to_string()),
+            find_usages: false,
+        };
+
+        let result = service.handle_get_context(params).await;
+        assert!(result.is_ok(), "Create context should succeed");
+
+        if let Some(content) = result.unwrap().content.first() {
+            if let Some(text) = content.as_text() {
+                let json: serde_json::Value = serde_json::from_str(text.text.as_str()).unwrap();
+                assert_eq!(json.get("operation").and_then(|v| v.as_str()), Some("create"));
+                assert_eq!(json.get("directory").and_then(|v| v.as_str()), Some("src"));
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_acp_context_invalid_operation() {
+        let service = create_test_service();
+
+        let params = GetContextParams {
+            operation: "invalid".to_string(),
+            target: None,
+            find_usages: false,
+        };
+
+        let result = service.handle_get_context(params).await;
+        assert!(result.is_err(), "Invalid operation should fail");
+    }
+
+    #[tokio::test]
+    async fn test_acp_context_missing_target() {
+        let service = create_test_service();
+
+        let params = GetContextParams {
+            operation: "modify".to_string(),
+            target: None,
+            find_usages: false,
+        };
+
+        let result = service.handle_get_context(params).await;
+        assert!(result.is_err(), "Modify without target should fail");
     }
 }

@@ -1,6 +1,6 @@
 [package]
 name = "acp-mcp"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 authors = ["ACP Contributors"]
 description = "ACP MCP Server - Model Context Protocol for AI tools"
@@ -15,8 +15,8 @@ path = "src/main.rs"
 
 [dependencies]
 # Core ACP library (use local path for development, version for release)
-# acp = { path = "../acp-cli", package = "acp-protocol" }
-acp = { version = "0.3.0", package = "acp-protocol" }
+acp = { path = "../acp-cli", package = "acp-protocol" }
+# acp = { version = "0.3.0", package = "acp-protocol" }
 
 # MCP - Model Context Protocol
 rmcp = { version = "0.8", features = ["server", "transport-io", "macros"] }
